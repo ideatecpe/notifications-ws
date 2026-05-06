@@ -1,0 +1,18 @@
+{
+  "name": "notifications-ws",
+  "version": "1.0.0",
+  "description": "",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "dotenv": "^17.4.2",
+    "mysql2": "^3.22.3",
+    "ws": "^8.20.0"
+  }
+}
