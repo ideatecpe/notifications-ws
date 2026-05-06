@@ -1,0 +1,9 @@
+services:
+  notifications-ws:
+    build: .
+    image: notifications-ws:v1
+    container_name: notifications-ws
+    restart: unless-stopped
+    ports:
+      - "3002:3001"
+    env_file: .env
