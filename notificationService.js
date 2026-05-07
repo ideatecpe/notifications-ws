@@ -214,9 +214,17 @@ async function getDashboardNotifications({ sucursalId, empresaRuc, evento = 'all
   }
 
   if (evento === 'status') {
-    const status = await getStatusData(filters);
-    return { ...status, evento, generatedAt: new Date().toISOString() };
-  }
+  const [pending, status] = await Promise.all([
+    getPendingData(filters),
+    getStatusData(filters),
+  ]);
+  return {
+    ...pending,
+    ...status,
+    evento,
+    generatedAt: new Date().toISOString(),
+  };
+}
 
   // 'all' — al conectarse por primera vez
   const [pendingResult, statusResult, certResult] = await Promise.allSettled([
