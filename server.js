@@ -28,7 +28,7 @@ const httpServer = http.createServer(async (req, res) => {
     res.writeHead(204);
     return res.end();
   }
-  
+
   if (req.method === "GET" && req.url === "/health") {
     res.writeHead(200);
     return res.end("OK");
@@ -152,8 +152,6 @@ wss.on("connection", (ws) => {
       ws.sucursalId = sucursalId ?? null;
       ws.empresaRuc = empresaRuc ?? null;
 
-      console.log("🔌 Identificado:", { sucursalId, empresaRuc });
-
       const key = makeKey(sucursalId, empresaRuc);
       if (!clients.has(key)) clients.set(key, new Set());
       clients.get(key).add(ws);
@@ -182,7 +180,6 @@ wss.on("connection", (ws) => {
         if (clientSet.size === 0) clients.delete(key);
       }
     }
-    console.log("❌ Cliente desconectado");
   });
 });
 
@@ -203,7 +200,6 @@ const heartbeatInterval = setInterval(() => {
 }, 30_000);
 
 function shutdown() {
-  console.log("🛑 Apagando servidor...");
   clearInterval(heartbeatInterval);
   closeService();
 
@@ -228,7 +224,6 @@ function shutdown() {
         console.error("❌ Error cerrando pool:", err.message);
       }
       clearTimeout(forceExit);
-      console.log("✅ Servidor cerrado correctamente");
       process.exit(0);
     });
   });
