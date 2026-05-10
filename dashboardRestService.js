@@ -227,12 +227,16 @@ async function getDashboardRest({ sucursalId, empresaRuc }) {
   const filters = await resolveFilters(sucursalId, empresaRuc);
   if (!filters) return null;
 
+    console.log("🔍 rucParaCert:", filters.rucParaCert);
+
   const [pendingRes, acceptedRes, rejectedRes, certRes] = await Promise.allSettled([
     getAllPending(filters),
     getAllAccepted(filters),
     getAllRejected(filters),
     getCertInfo(filters.rucParaCert),
   ]);
+
+  console.log("🔍 certRes:", certRes);
 
   return {
     pendingDocs:  pendingRes.status  === "fulfilled" ? pendingRes.value  : [],
