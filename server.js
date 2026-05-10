@@ -1,6 +1,13 @@
 require("dotenv").config();
 const { WebSocketServer } = require("ws");
-const { getDashboardNotifications, closeService } = require("./notificationService");
+const {
+  getDashboardNotifications,
+  getAllStatusData,
+  getPendingData,
+  getCertificateExpiry,
+  resolveFilters,
+  closeService,
+} = require("./notificationService");
 const pool = require("./db");
 const http = require("http");
 
@@ -9,7 +16,7 @@ const MAX_BODY_BYTES = 64 * 1024;
 const VALID_EVENTOS = new Set(["pending", "status", "all"]);
 
 function makeKey(sucursalId, empresaRuc) {
-  return (sucursalId !== null && sucursalId !== undefined)
+  return sucursalId !== null && sucursalId !== undefined
     ? `sucursal:${sucursalId}`
     : `ruc:${empresaRuc}`;
 }
@@ -50,7 +57,11 @@ const httpServer = http.createServer(async (req, res) => {
     req.on("end", async () => {
       if (aborted) return;
       try {
-        const { sucursalId, empresaRuc, evento: rawEvento = "all" } = JSON.parse(body);
+        const {
+          sucursalId,
+          empresaRuc,
+          evento: rawEvento = "all",
+        } = JSON.parse(body);
         const evento = VALID_EVENTOS.has(rawEvento) ? rawEvento : "all";
 
         const key = makeKey(sucursalId, empresaRuc);
@@ -85,6 +96,70 @@ const httpServer = http.createServer(async (req, res) => {
     return;
   }
 
+  if (req.method === "GET" && req.url.startsWith("/dashboard-notifications")) {
+    try {
+      const url = new URL(req.url, `http://localhost`);
+      const sucursalId = url.searchParams.get("sucursalId")
+        ? Number(url.searchParams.get("sucursalId"))
+        : null;
+      const empresaRuc = url.searchParams.get("empresaRuc") || null;
+
+      if (!sucursalId && !empresaRuc) {
+        res.writeHead(400, { "Content-Type": "application/json" });
+        return res.end(
+          JSON.stringify({ ok: false, error: "Falta sucursalId o empresaRuc" }),
+        );
+      }
+
+      const filters = await resolveFilters(sucursalId, empresaRuc); // importar
+      if (!filters) {
+        res.writeHead(404, { "Content-Type": "application/json" });
+        return res.end(JSON.stringify({ ok: false, error: "No encontrado" }));
+      }
+
+      const [pendingResult, statusResult, certResult] =
+        await Promise.allSettled([
+          getPendingData(filters),
+          getAllStatusData(filters), // ← la nueva
+          getCertificateExpiry(filters.rucParaCert),
+        ]);
+
+      const pending =
+        pendingResult.status === "fulfilled"
+          ? pendingResult.value
+          : { pendingDocs: [], totalPending: 0 };
+      const status =
+        statusResult.status === "fulfilled"
+          ? statusResult.value
+          : {
+              allAccepted: [],
+              allRejected: [],
+              lastAccepted: null,
+              lastRejected: null,
+            };
+      const certInfo =
+        certResult.status === "fulfilled" ? certResult.value : null;
+
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(
+        JSON.stringify({
+          ok: true,
+          pendingDocs: pending.pendingDocs,
+          totalPending: pending.totalPending,
+          allAccepted: status.allAccepted,
+          allRejected: status.allRejected,
+          certInfo,
+          generatedAt: new Date().toISOString(),
+        }),
+      );
+    } catch (err) {
+      console.error("❌ Error en /dashboard-notifications:", err.message);
+      res.writeHead(500, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok: false, error: err.message }));
+    }
+    return;
+  }
+
   res.writeHead(404);
   res.end("Not found");
 });
@@ -94,7 +169,9 @@ const wss = new WebSocketServer({ server: httpServer });
 wss.on("connection", (ws) => {
   console.log("✅ Cliente conectado");
   ws.isAlive = true;
-  ws.on("pong", () => { ws.isAlive = true; });
+  ws.on("pong", () => {
+    ws.isAlive = true;
+  });
 
   ws.on("message", async (message) => {
     try {
@@ -109,7 +186,11 @@ wss.on("connection", (ws) => {
       clients.get(key).add(ws);
 
       // Al conectarse siempre carga todo
-      const data = await getDashboardNotifications({ sucursalId, empresaRuc, evento: "all" });
+      const data = await getDashboardNotifications({
+        sucursalId,
+        empresaRuc,
+        evento: "all",
+      });
       ws.send(JSON.stringify({ type: "dashboard", data }));
     } catch (err) {
       console.error("❌ Error:", err.message);
@@ -117,8 +198,9 @@ wss.on("connection", (ws) => {
   });
 
   ws.on("close", () => {
-    const identified = (ws.sucursalId !== null && ws.sucursalId !== undefined)
-      || (ws.empresaRuc !== null && ws.empresaRuc !== undefined);
+    const identified =
+      (ws.sucursalId !== null && ws.sucursalId !== undefined) ||
+      (ws.empresaRuc !== null && ws.empresaRuc !== undefined);
     if (identified) {
       const key = makeKey(ws.sucursalId, ws.empresaRuc);
       const clientSet = clients.get(key);
@@ -155,7 +237,9 @@ function shutdown() {
   for (const clientSet of clients.values()) {
     for (const ws of clientSet) {
       if (ws.readyState === ws.OPEN) {
-        ws.send(JSON.stringify({ type: "shutdown", message: "Servidor reiniciando" }));
+        ws.send(
+          JSON.stringify({ type: "shutdown", message: "Servidor reiniciando" }),
+        );
         ws.close(1001, "Server shutting down");
       }
     }
