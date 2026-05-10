@@ -142,46 +142,64 @@ async function getPendingData(filters) {
   };
 }
 
-// Reemplaza getStatusData con esta versión extendida
-async function getAllStatusData(filters) {
+// ─── Solo último aceptado y rechazado ────────────────────────────────────────
+async function getStatusData(filters) {
   const { compFilterEnvio, compParams, guiaFilterEnvio, guiaParam } = filters;
 
-  const baseCols = `id, tipo, numeroCompleto, tipoComprobante, destinatario,
-                    importeTotal, tipoMoneda, estadoSunat,
-                    codigoRespuestaSunat, mensajeRespuestaSunat, fechaActualizacion`;
+  const [[lastAccepted]] = await queryWithRetry(
+    `SELECT id, tipo, numeroCompleto, tipoComprobante, destinatario,
+            importeTotal, tipoMoneda, estadoSunat, fechaActualizacion
+     FROM (
+       SELECT comprobanteID AS id, 'comprobante' AS tipo,
+              numeroCompleto, tipoComprobante,
+              clienteRznSocial AS destinatario,
+              importeTotal, tipoMoneda, estadoSunat,
+              fechaEnvioSunat AS fechaActualizacion
+       FROM comprobante
+       WHERE ${compFilterEnvio} AND estadoSunat = 'ACEPTADO'
+       UNION ALL
+       SELECT guiaId AS id, 'guia' AS tipo,
+              numeroCompleto, tipoDoc AS tipoComprobante,
+              destinatarioRznSocial AS destinatario,
+              NULL AS importeTotal, NULL AS tipoMoneda,
+              estadoSunat, fechaEnvioSunat AS fechaActualizacion
+       FROM guiaremision
+       WHERE ${guiaFilterEnvio} AND estadoSunat = 'ACEPTADO'
+     ) AS todos
+     ORDER BY fechaActualizacion DESC LIMIT 1`,
+    [...compParams, guiaParam]
+  );
 
-  const unionQuery = (estado) => `
-    SELECT comprobanteID AS id, 'comprobante' AS tipo,
-           numeroCompleto, tipoComprobante,
-           clienteRznSocial AS destinatario,
-           importeTotal, tipoMoneda, estadoSunat,
-           codigoRespuestaSunat, mensajeRespuestaSunat,
-           fechaEnvioSunat AS fechaActualizacion
-    FROM comprobante
-    WHERE ${compFilterEnvio} AND estadoSunat = ?
-    UNION ALL
-    SELECT guiaId AS id, 'guia' AS tipo,
-           numeroCompleto, tipoDoc AS tipoComprobante,
-           destinatarioRznSocial AS destinatario,
-           NULL, NULL, estadoSunat,
-           codigoRespuestaSunat, mensajeRespuestaSunat,
-           fechaEnvioSunat AS fechaActualizacion
-    FROM guiaremision
-    WHERE ${guiaFilterEnvio} AND estadoSunat = ?
-    ORDER BY fechaActualizacion DESC
-  `;
-
-  const [[aceptados], [rechazados]] = await Promise.all([
-    queryWithRetry(unionQuery('ACEPTADO'), [...compParams, 'ACEPTADO', guiaParam, 'ACEPTADO']),
-    queryWithRetry(unionQuery('RECHAZADO'), [...compParams, 'RECHAZADO', guiaParam, 'RECHAZADO']),
-  ]);
+  const [[lastRejected]] = await queryWithRetry(
+    `SELECT id, tipo, numeroCompleto, tipoComprobante, destinatario,
+            importeTotal, tipoMoneda, estadoSunat,
+            codigoRespuestaSunat, mensajeRespuestaSunat, fechaActualizacion
+     FROM (
+       SELECT comprobanteID AS id, 'comprobante' AS tipo,
+              numeroCompleto, tipoComprobante,
+              clienteRznSocial AS destinatario,
+              importeTotal, tipoMoneda, estadoSunat,
+              codigoRespuestaSunat, mensajeRespuestaSunat,
+              fechaEnvioSunat AS fechaActualizacion
+       FROM comprobante
+       WHERE ${compFilterEnvio} AND estadoSunat = 'RECHAZADO'
+       UNION ALL
+       SELECT guiaId AS id, 'guia' AS tipo,
+              numeroCompleto, tipoDoc AS tipoComprobante,
+              destinatarioRznSocial AS destinatario,
+              NULL AS importeTotal, NULL AS tipoMoneda,
+              estadoSunat, codigoRespuestaSunat, mensajeRespuestaSunat,
+              fechaEnvioSunat AS fechaActualizacion
+       FROM guiaremision
+       WHERE ${guiaFilterEnvio} AND estadoSunat = 'RECHAZADO'
+     ) AS todos
+     ORDER BY fechaActualizacion DESC LIMIT 1`,
+    [...compParams, guiaParam]
+  );
 
   return {
-    allAccepted: aceptados  || [],
-    allRejected: rechazados || [],
-    // compatibilidad con el WS existente
-    lastAccepted: aceptados?.[0]  || null,
-    lastRejected: rechazados?.[0] || null,
+    lastAccepted: lastAccepted || null,
+    lastRejected: lastRejected || null,
   };
 }
 
@@ -244,4 +262,4 @@ function closeService() {
   clearInterval(cacheCleanupInterval);
 }
 
-module.exports = { getDashboardNotifications, getAllStatusData, getPendingData, getCertificateExpiry, resolveFilters, closeService };
+module.exports = { getDashboardNotifications, closeService };
