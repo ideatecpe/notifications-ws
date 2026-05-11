@@ -18,12 +18,14 @@ function makeKey(sucursalId, empresaRuc) {
     : `ruc:${empresaRuc}`;
 }
 
-const httpServer = http.createServer(async (req, res) => {
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type",
+};
 
-  // ─── CORS ────────────────────────────────────────────────────────────────
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+const httpServer = http.createServer(async (req, res) => {
+  Object.entries(corsHeaders).forEach(([k, v]) => res.setHeader(k, v));
   if (req.method === "OPTIONS") {
     res.writeHead(204);
     return res.end();
