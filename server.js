@@ -135,6 +135,46 @@ const httpServer = http.createServer(async (req, res) => {
     return;
   }
 
+  if (req.method === "POST" && req.url === "/yape") {
+    let body = "";
+    let bodyLength = 0;
+
+    req.on("data", (chunk) => {
+      bodyLength += chunk.length;
+      if (bodyLength > MAX_BODY_BYTES) { req.destroy(); return; }
+      body += chunk;
+    });
+
+    req.on("end", () => {
+      try {
+        const { monto, remitente, fechaHora, title, body: notifBody } = JSON.parse(body);
+
+        const payload = JSON.stringify({
+          type: "yape",
+          data: { monto, remitente, fechaHora, body: notifBody, title },
+        });
+
+        let enviados = 0;
+        for (const clientSet of clients.values()) {
+          for (const ws of clientSet) {
+            if (ws.readyState === ws.OPEN) {
+              ws.send(payload);
+              enviados++;
+            }
+          }
+        }
+
+        console.log(`💜 /yape S/ ${monto} de ${remitente} → ${enviados} cliente(s)`);
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: true, enviados }));
+      } catch (err) {
+        res.writeHead(400);
+        res.end(JSON.stringify({ ok: false, error: err.message }));
+      }
+    });
+    return;
+  }
+
   res.writeHead(404);
   res.end("Not found");
 });
