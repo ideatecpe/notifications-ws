@@ -147,24 +147,28 @@ const httpServer = http.createServer(async (req, res) => {
 
     req.on("end", () => {
       try {
-        const { monto, remitente, codigoSeguridad, fechaHora, title, body: notifBody } = JSON.parse(body);
+        const { monto, remitente, codigoSeguridad, fechaHora, title, body: notifBody, empresaRuc, sucursalId } = JSON.parse(body);
 
         const payload = JSON.stringify({
           type: "yape",
           data: { monto, remitente, codigoSeguridad, fechaHora, body: notifBody, title },
         });
 
+        // Enviar solo a los clientes de esa empresa/sucursal
+        const key = sucursalId
+          ? makeKey(Number(sucursalId), null)
+          : makeKey(null, empresaRuc);
+
+        const clientSet = clients.get(key) || new Set();
         let enviados = 0;
-        for (const clientSet of clients.values()) {
-          for (const ws of clientSet) {
-            if (ws.readyState === ws.OPEN) {
-              ws.send(payload);
-              enviados++;
-            }
+        for (const ws of clientSet) {
+          if (ws.readyState === ws.OPEN) {
+            ws.send(payload);
+            enviados++;
           }
         }
 
-        console.log(`💜 /yape S/ ${monto} de ${remitente} → ${enviados} cliente(s)`);
+        console.log(`💜 /yape S/ ${monto} de ${remitente} → key:${key} → ${enviados} cliente(s)`);
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ ok: true, enviados }));
       } catch (err) {
