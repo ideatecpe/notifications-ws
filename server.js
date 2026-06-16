@@ -147,11 +147,11 @@ const httpServer = http.createServer(async (req, res) => {
 
     req.on("end", () => {
       try {
-        const { monto, remitente, fechaHora, title, body: notifBody } = JSON.parse(body);
+        const { monto, remitente, codigoSeguridad, fechaHora, title, body: notifBody } = JSON.parse(body);
 
         const payload = JSON.stringify({
           type: "yape",
-          data: { monto, remitente, fechaHora, body: notifBody, title },
+          data: { monto, remitente, codigoSeguridad, fechaHora, body: notifBody, title },
         });
 
         let enviados = 0;
