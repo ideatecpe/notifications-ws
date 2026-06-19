@@ -147,11 +147,29 @@ const httpServer = http.createServer(async (req, res) => {
 
     req.on("end", () => {
       try {
-        const { monto, remitente, codigoSeguridad, fechaHora, title, body: notifBody, empresaRuc, sucursalId } = JSON.parse(body);
+        const { title, body: notifBody, empresaRuc, sucursalId,
+                monto: montoRaw, remitente: remitenteRaw, codigoSeguridad: codigoRaw,
+                fechaHora } = JSON.parse(body);
+
+        // Parsear desde el texto crudo si los campos no vienen pre-calculados (MacroDroid)
+        let monto = montoRaw ?? null;
+        let remitente = remitenteRaw ?? "Yape";
+        let codigoSeguridad = codigoRaw ?? "";
+
+        if (monto === null && notifBody) {
+          const montoMatch = notifBody.match(/S\/[.\s]*(\d+[.,]?\d*)/);
+          monto = montoMatch ? parseFloat(montoMatch[1].replace(",", ".")) : null;
+
+          const remitenteMatch = notifBody.match(/^(.+?)\s+te\s+(?:envió|ha enviado)/);
+          if (remitenteMatch) remitente = remitenteMatch[1].trim();
+
+          const codigoMatch = notifBody.match(/có[d.]?\s+de\s+seguridad\s*(?:es:?)?\s*(\d+)/i);
+          if (codigoMatch) codigoSeguridad = codigoMatch[1];
+        }
 
         const payload = JSON.stringify({
           type: "yape",
-          data: { monto, remitente, codigoSeguridad, fechaHora, body: notifBody, title },
+          data: { monto, remitente, codigoSeguridad, fechaHora: fechaHora ?? new Date().toISOString(), body: notifBody, title },
         });
 
         // Enviar solo a los clientes de esa empresa/sucursal
