@@ -4,7 +4,9 @@
       "Bash(npm start *)",
       "Bash(taskkill *)",
       "Bash(curl *)",
-      "Bash(echo.)"
+      "Bash(echo.)",
+      "Bash(node -c notificationService.js)",
+      "Bash(node -c dashboardRestService.js)"
     ]
   }
 }

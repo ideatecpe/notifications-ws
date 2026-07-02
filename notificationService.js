@@ -102,7 +102,16 @@ async function resolveFilters(sucursalId, empresaRuc) {
     ? `sucursalId = ? AND DATE(fechaEnvioSunat) = CURDATE()`
     : `empresaRuc = ? AND DATE(fechaEnvioSunat) = CURDATE()`;
 
-  const result = { compRuc, compAnexo, compParams, guiaParam, rucParaCert, compFilter, compFilterEnvio, guiaFilter, guiaFilterEnvio };
+  // Filtros SIN restricción de fecha (para "los últimos N sin importar el día")
+  const compFilterRecent = useSucursal
+    ? `empresaRuc = ? AND establecimientoAnexo = ?`
+    : `empresaRuc = ?`;
+
+  const guiaFilterRecent = useSucursal
+    ? `sucursalId = ?`
+    : `empresaRuc = ?`;
+
+  const result = { compRuc, compAnexo, compParams, guiaParam, rucParaCert, compFilter, compFilterEnvio, guiaFilter, guiaFilterEnvio, compFilterRecent, guiaFilterRecent };
   filtersCache.set(cacheKey, { data: result, expiresAt: Date.now() + CACHE_TTL_MS });
   return result;
 }
@@ -203,6 +212,47 @@ async function getStatusData(filters) {
   };
 }
 
+// ─── Últimos N documentos, sin importar estado ni día ─────────────────────────
+async function getRecentDocs(filters, limit = 10) {
+  const { compFilterRecent, compParams, guiaFilterRecent, guiaParam } = filters;
+
+  const [comprobantes] = await queryWithRetry(
+    `SELECT comprobanteID AS id, 'comprobante' AS tipo,
+            numeroCompleto, tipoComprobante,
+            clienteRznSocial AS destinatario,
+            importeTotal, tipoMoneda,
+            fechaCreacion AS fechaActualizacion,
+            estadoSunat,
+            codigoRespuestaSunat,
+            mensajeRespuestaSunat
+     FROM comprobante
+     WHERE ${compFilterRecent}
+     ORDER BY fechaCreacion DESC
+     LIMIT ?`,
+    [...compParams, limit]
+  );
+
+  const [guias] = await queryWithRetry(
+    `SELECT guiaId AS id, 'guia' AS tipo,
+            numeroCompleto, tipoDoc AS tipoComprobante,
+            destinatarioRznSocial AS destinatario,
+            NULL AS importeTotal, NULL AS tipoMoneda,
+            fechaCreacion AS fechaActualizacion,
+            estadoSunat,
+            codigoRespuestaSunat,
+            mensajeRespuestaSunat
+     FROM guiaremision
+     WHERE ${guiaFilterRecent}
+     ORDER BY fechaCreacion DESC
+     LIMIT ?`,
+    [guiaParam, limit]
+  );
+
+  return [...comprobantes, ...guias]
+    .sort((a, b) => new Date(b.fechaActualizacion) - new Date(a.fechaActualizacion))
+    .slice(0, limit);
+}
+
 // ─── Función principal ────────────────────────────────────────────────────────
 async function getDashboardNotifications({ sucursalId, empresaRuc, evento = 'all' }) {
   const filters = await resolveFilters(sucursalId, empresaRuc);
@@ -227,19 +277,22 @@ async function getDashboardNotifications({ sucursalId, empresaRuc, evento = 'all
 }
 
   // 'all' — al conectarse por primera vez
-  const [pendingResult, statusResult, certResult] = await Promise.allSettled([
+  const [pendingResult, statusResult, recentResult, certResult] = await Promise.allSettled([
     getPendingData(filters),
     getStatusData(filters),
+    getRecentDocs(filters, 10),
     getCertificateExpiry(filters.rucParaCert),
   ]);
 
   const pending = pendingResult.status === 'fulfilled' ? pendingResult.value : { pendingDocs: [], totalPending: 0 };
   const status = statusResult.status === 'fulfilled' ? statusResult.value : { lastAccepted: null, lastRejected: null };
+  const recentDocs = recentResult.status === 'fulfilled' ? recentResult.value : [];
   const certInfo = certResult.status === 'fulfilled' ? certResult.value : null;
 
   return {
     ...pending,
     ...status,
+    recentDocs,
     certInfo,
     evento: 'all',
     generatedAt: new Date().toISOString(),
@@ -251,6 +304,7 @@ function emptyResult(evento = 'all') {
     pendingDocs: [],
     lastAccepted: null,
     lastRejected: null,
+    recentDocs: [],
     totalPending: 0,
     certInfo: null,
     evento,
