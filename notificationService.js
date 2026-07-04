@@ -259,18 +259,23 @@ async function getDashboardNotifications({ sucursalId, empresaRuc, evento = 'all
   if (!filters) return emptyResult(evento);
 
   if (evento === 'pending') {
-    const pending = await getPendingData(filters);
-    return { ...pending, evento, generatedAt: new Date().toISOString() };
+    const [pending, recentDocs] = await Promise.all([
+      getPendingData(filters),
+      getRecentDocs(filters, 10),
+    ]);
+    return { ...pending, recentDocs, evento, generatedAt: new Date().toISOString() };
   }
 
   if (evento === 'status') {
-  const [pending, status] = await Promise.all([
+  const [pending, status, recentDocs] = await Promise.all([
     getPendingData(filters),
     getStatusData(filters),
+    getRecentDocs(filters, 10),
   ]);
   return {
     ...pending,
     ...status,
+    recentDocs,
     evento,
     generatedAt: new Date().toISOString(),
   };
